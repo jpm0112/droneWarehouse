@@ -1,16 +1,94 @@
-# This is a sample Python script.
-
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
+import pyomo.environ as pyo
+import numpy as np
+
+data_type = "float"
+drone_distances = np.genfromtxt("drone_distances.csv",delimiter=',').astype(data_type)
+worker_distances = np.genfromtxt("worker_distances.csv",delimiter=',').astype(data_type)
 
 
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
+drone_distances[0,0] = 0
+worker_distances[0,0] = 0
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+number_workers = 1
+number_drones = 2
+number_nodes = len(drone_distances)
+number_orders = 5
+
+nodes = list(range(0, number_nodes))
+orders = list(np.random.choice(number_nodes,number_orders, replace= False))
+orders = orders.append(0)
+workers = list(range(0, number_workers))
+drones = list(range(0, number_drones))
+
+
+m = pyo.ConcreteModel()
+
+m.nodes = pyo.Set(initialize=nodes)
+m.nodes2 = pyo.Set(initialize=nodes)
+m.orders = pyo.Set(initialize=orders)
+m.workers = pyo.Set(initialize=workers)
+m.drones = pyo.Set(initialize=drones)
+
+m.x = pyo.Var(m.nodes,m.nodes,m.workers, domain=pyo.Binary)
+m.y = pyo.Var(m.nodes,m.drones, domain=pyo.Binary)
+m.makespan = pyo.Var(domain=pyo.NonNegativeReals)
+
+m.u = pyo.Var(m.nodes, m.workers, within=pyo.NonNegativeIntegers,bounds=(0,number_orders-1))
+
+
+# Constraint 1:
+m.orders_fulfillment = pyo.ConstraintList()
+for j in m.nodes:
+    m.orders_fulfillment.add(sum(m.y[j,d] for d in m.drones) + sum(m.x[i,j,k] for i in m.nodes for k in m.workers) == 1   )
+
+
+# subroutes delete
+m.subroutes = pyo.ConstraintList()
+for i in list(filter(lambda num: num != 0, m.nodes)):
+    for j in list(filter(lambda num: num != 0 and num != i, m.nodes)):
+        for k in m.workers:
+            m.subroutes.add(m.u[i,k]-m.u[j,k] + number_nodes*m.x[i,j,k] <= number_nodes-1)
+
+
+#Makespan workers
+m.makespan_workers = pyo.ConstraintList()
+for k in m.workers:
+    m.makespan_workers.add(sum(m.x[i,j,k]*worker_distances[i,j] for i in m.nodes for j in m.nodes) <= m.makespan)
+
+#makespan drones
+m.makespan_drones = pyo.ConstraintList()
+for d in m.drones:
+    m.makespan_drones.add(sum(m.y[i,d] * drone_distances[0,i] * 2  for i in m.nodes ) <= m.makespan)
+
+
+m.OBJ = pyo.Objective(expr=m.makespan, sense=pyo.minimize)
+
+
+
+solver = "gurobi"
+opt = pyo.SolverFactory(solver)
+opt.solve(m)
+
+print(list(m.x[:,:,:].value))
+print(list(m.y[:,:].value))
+
+sum(list(m.x[:,:,:].value))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
