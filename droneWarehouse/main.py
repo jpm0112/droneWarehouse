@@ -29,18 +29,17 @@ drones = list(range(0, number_drones))
 m = pyo.ConcreteModel()
 
 m.nodes = pyo.Set(initialize=nodes)
-m.nodes2 = pyo.Set(initialize=nodes)
+m.nodes2 = pyo.RangeSet(1,number_nodes+1)
 m.orders = pyo.Set(initialize=orders)
 m.workers = pyo.Set(initialize=workers)
 m.drones = pyo.Set(initialize=drones)
 
 
 
-m.x = pyo.Var(m.nodes,m.nodes,m.workers, domain=pyo.Binary)
+m.x = pyo.Var(m.nodes,m.nodes, domain=pyo.Binary)
 m.y = pyo.Var(m.nodes,m.drones, domain=pyo.Binary)
 m.makespan = pyo.Var(domain=pyo.NonNegativeReals)
 
-m.u = pyo.Var(m.nodes, m.workers, within=pyo.NonNegativeIntegers,bounds=(0,number_orders-1))
 
 
 # Constraint 1:
@@ -49,30 +48,30 @@ for j in m.nodes:
     # m.orders_fulfillment.add(sum(m.y[j,d] for d in m.drones) + sum(m.x[i,j,k] for i in m.nodes if j!=i for k in m.workers) == 1   )
     # m.orders_fulfillment.add(sum(m.y[j, d] for d in m.drones) + sum(m.x[j, i, k] for i in m.nodes if j!=i for k in m.workers) == 1)
     m.orders_fulfillment.add(
-        sum( m.x[i, j, k] for i in m.nodes if j!=i for k in m.workers) == 1)
+        sum( m.x[i, j] for i in m.nodes if j!=i) == 1)
     m.orders_fulfillment.add(
-        sum(m.x[j, i, k] for i in m.nodes if j!=i  for k in m.workers) == 1)
-
-
-# flows
-
-m.flows = pyo.ConstraintList()
-for i in m.nodes:
-
+        sum(m.x[j, i] for i in m.nodes if j!=i) == 1)
 
 
 # subroutes delete
 m.subroutes = pyo.ConstraintList()
-for i in list(filter(lambda num: num != -1, m.nodes)):
-    for j in list(filter(lambda num: num != -1 and num != i, m.nodes)):
-        for k in m.workers:
-            m.subroutes.add(m.u[i,k]-m.u[j,k] + number_nodes*m.x[i,j,k] <= number_nodes-1)
+for i in list(filter(lambda num: num != 0, m.nodes)):
+    for j in list(filter(lambda num: num != 0 and num != i, m.nodes)):
+            m.subroutes.add(m.u[i]-m.u[j] + number_nodes*m.x[i,j] <= number_nodes-1)
+
+
+m.flows = pyo.ConstraintList()
+
+for h in m.nodes:
+    m.flows.add(sum(m.x[i,h] for i in m.nodes) - sum())
+
+
 
 
 #Makespan workers
 m.makespan_workers = pyo.ConstraintList()
 for k in m.workers:
-    m.makespan_workers.add(sum(m.x[i,j,k]*worker_distances[i,j] for i in m.nodes for j in m.nodes) <= m.makespan)
+    m.makespan_workers.add(sum(m.x[i,j]*worker_distances[i,j] for i in m.nodes for j in m.nodes) <= m.makespan)
 
 #makespan drones
 m.makespan_drones = pyo.ConstraintList()
@@ -87,11 +86,11 @@ solver = "gurobi"
 opt = pyo.SolverFactory(solver)
 opt.solve(m)
 
-print(list(m.x[:,:,:].value))
+print(list(m.x[:,:].value))
 print(list(m.y[:,:].value))
-print(list(m.u[:,:].value))
+print(list(m.u[:].value))
 
-sum(list(m.x[:,:,:].value))
+sum(list(m.x[:,:].value))
 
 
 print(m.makespan.value)
