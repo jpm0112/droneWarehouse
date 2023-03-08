@@ -18,3 +18,16 @@ plt.title('Gaussian Scatterplot with -0.5s covariance') #change tittle
 
 #plt.savefig('gaussian_scatterplot.pdf', format='pdf') #Uncomment to save pdf
 plt.show()
+
+
+
+# # Makespan workers
+# m.makespan_workers = pyo.ConstraintList()
+# m.makespan_workers.add(sum(m.x_workers[i, j]*worker_distances[i,j] for i in m.nodes for j in m.nodes) <= m.makespan)
+#
+# # makespan drones: have to consider the distances of the routes with v
+# m.makespan_drones = pyo.ConstraintList()
+# m.makespan_workers.add(sum(m.x_drones[i, j,r]*drone_distances[i,j]  for i in m.nodes for j in m.nodes for r in m.trips)
+#                        + sum(m.x_drones[i,j,r]*m.v[i,k,r]*(drone_distances[i,k]+drone_distances[k,j]-drone_distances[i,j])
+#                                                          for i in m.nodes for j in m.nodes for r in m.trips for k in m.nodes)
+#                            <= m.makespan)

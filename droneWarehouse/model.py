@@ -4,52 +4,15 @@ import pyomo.environ as pyo
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
+from instances import *
 
 
 # GENERATE NODES AND DISTANCES
-np.random.seed(1049586)
-n = 8 # with 6 is good instance, 8 is the one that i want to show
-rnd = np.random
-rnd.seed(12)
-coord_x = [0]
-coord_y = [0]
-for i in range(n - 1):
-    coord = rnd.rand() * 100
-    coord_x.append(coord)
 
-for i in range(n - 1):
-    coord = rnd.rand() * 100
-    coord_y.append(coord)
-
-coord_x[-2] = 200
-coord_y[-2] = 200
-coord_x[-3] = 210
-coord_y[-3] = 180
-
-coord_x[3] = coord_x[3] + 10
-coord_y[3] = coord_y[3] + 10
-depot = [0]
-orders_list = [i for i in range(1, n)] #[] es lista
-nodes = depot + orders_list# suma de lista concatena las dos listas
-
-coord_x[-1] = coord_x[0]
-coord_y[-1] = coord_y[0]
-
-#drone distances
-drone_distances = np.random.randint(1,10,size=(n,n))
-for i in range(n):
-    for j in range(n):
-        point1 = np.array((coord_x[i],coord_y[i]))
-        point2 = np.array((coord_x[j], coord_y[j]))
-        drone_distances[i,j] = np.linalg.norm(point1 - point2)
-
-# WORKER DISTANCE MATRIX
-worker_distances = drone_distances*4                        #CHANGE FOR WORKER DISTANCE MATRIX
-np.fill_diagonal(drone_distances,1000000)
-np.fill_diagonal(worker_distances,1000000)
+n = 7 # with 6 is good instance, 8 is the one that i want to show
 
 
-
+coord_x, coord_y, drone_distances,worker_distances, nodes = create_instance1(n,seed= 1049586)
 
 
 # DEFINE PARAMETERS
@@ -57,10 +20,11 @@ number_workers = 1
 number_drones = 1
 number_nodes = len(drone_distances)-1
 worker_capacity = 10000
-max_time = 1000000000
-drone_capacity = 1                                  #DRONE CAPACITY
-drone_range = 700
-big_M = 1000000
+
+drone_capacity = 1
+#DRONE CAPACITY
+drone_range = 1200                                 #DRONE RANGE
+big_M = 100000000
 max_time = big_M
 
 nodes_list = list(range(0, number_nodes))
@@ -73,6 +37,7 @@ demand[0] = 0
 demand[-1] = 0
 demand = demand.astype("int")
 
+drone_distances[4,0]+920
 
 m = pyo.ConcreteModel()
 
@@ -98,7 +63,12 @@ m.y_drones = pyo.Var(m.nodes,m.trips, domain=pyo.NonNegativeReals) #acumulated c
 # drop off variables
 m.v = pyo.Var(m.nodes, m.nodes,m.trips, domain=pyo.Binary) #if drone drops from node i to drone j in trip r
 m.w = pyo.Var(m.nodes, m.nodes,m.trips, domain=pyo.Binary) # if drone waits for worker when dropping (0 if worker waits for drone)
+m.z = pyo.Var(m.nodes, m.nodes, m.trips, domain=pyo.Binary) # aux variable of the multiplication of v and w
+m.z_prime = pyo.Var(m.nodes, m.nodes, m.trips, domain=pyo.Binary) # aux variable of the multiplication of v and (1-w)
+
 m.t = pyo.Var(m.nodes, domain=pyo.NonNegativeReals)
+m.t_prime =pyo.Var(m.trips, domain=pyo.NonNegativeReals) #ending time of each trip #not used
+
 
 m.makespan = pyo.Var(domain=pyo.NonNegativeReals)
 
@@ -152,14 +122,13 @@ for i in m.nodes:
 m.time_accumulation = pyo.ConstraintList()
 for i in m.nodes:
     for j in m.nodes:
-        m.time_accumulation.add(m.t[i] + worker_distances[i,j] * m.x_workers[i,j] - max_time * (1 - m.x_workers[i,j]) <= m.t[j])
+        for k in m.nodes:
+            for r in m.trips:
+                m.time_accumulation.add(m.t[i]
+                                        + worker_distances[i, j] * m.x_workers[i, j]
+                                        + m.z_prime[k,i,r] * (m.t[k]+drone_distances[k,i] - m.t[i])
+                                        - max_time * (1 - m.x_workers[i, j]) <= m.t[j])
 
-print(m.x_workers[0,1].value)
-print(worker_distances[1,2])
-print(m.t[2].value)
-print(drone_distances[4,0])
-print(list(m.v[4,2,:].value))
-print(list(m.w[4,2,:].value))
 
 for i in m.nodes:
     for j in m.nodes:
@@ -171,8 +140,41 @@ for i in m.nodes:
                     + drone_distances[i, j] * m.x_drones[i, j, r]
                     - m.v[i, k, r] * (drone_distances[i, j] * m.x_drones[i, j, r])
                     + m.v[i, k, r] * (drone_distances[i, k] + drone_distances[k, j])
-                    + m.w[i, k, r] * (m.t[k]-m.t[i]-drone_distances[i,k])
+                    + m.z[i, k, r]  * (m.t[k]-m.t[i]-drone_distances[i,k])
                     - max_time * (1 - m.x_drones[i, j, r]) <= m.t[j])
+
+#constraint to use the first indexes of the trips
+# if the index e is lower than r, if trip do not have a route r cant have a route either
+m.trips_order = pyo.ConstraintList()
+for r in m.trips:
+    for e in m.trips:
+        if (e < r):
+            m.trips_order.add(sum(m.x_drones[0,j,r] for j in m.orders) <= sum(m.x_drones[0,j,e] for j in m.orders))
+
+#get the ending time of each trip on the routes of the drone
+# m.max_time_trips = pyo.ConstraintList()
+# for r in m.trips:
+#     for i in m.nodes:
+#         for j in m.nodes1:
+#             m.max_time_trips.add(m.t[j]*m.x_drones[i,j,r] + drone_distances[j,0]*m.x_drones[j,0,r] <= m.t_prime[r])
+
+
+
+#auxilary variables constraints for the vw and v(1-w) products
+m.aux_constraints = pyo.ConstraintList()
+for i in m.nodes:
+    for j in m.nodes:
+        for r in m.trips:
+            m.aux_constraints.add(m.z[i,j,r] <= m.v[i,j,r])
+            m.aux_constraints.add(m.z[i, j, r] <= m.w[i, j, r])
+            m.aux_constraints.add(m.v[i,j,r] + m.w[i,j,r] -1 <= m.z[i, j, r] )
+
+            m.aux_constraints.add(m.z_prime[i, j, r] <= m.v[i, j, r])
+            m.aux_constraints.add(m.z_prime[i, j, r] <= (1-m.w[i, j, r]))
+            m.aux_constraints.add(m.v[i, j, r] + (1-m.w[i, j, r]) - 1 <= m.z_prime[i, j, r])
+
+
+
 
 # constraints to coordinate drop off in terms of times
 m.drop_time_coordination = pyo.ConstraintList()
@@ -248,23 +250,13 @@ for r in m.trips:
 
 
 # range constraint
-# m.range = pyo.ConstraintList()
-# for r in m.trips:
-#     m.range.add(sum(drone_distances[i, j] * m.x_drones[i, j, r]
-#                     - m.v[i, k, r] * (drone_distances[i, j] * m.x_drones[i, j, r])
-#                     + m.v[i, k, r] * (drone_distances[i, k] + drone_distances[k, j])
-#                     + m.w[i, k, r] * (m.t[k]-m.t[i]-drone_distances[i,k]) for i in m.nodes for j in m.nodes for k in m.nodes) <= drone_range)
+m.range = pyo.ConstraintList()
+for r in m.trips:
+        m.range.add(sum(m.x_drones[i,n-1,r] * (m.t[i]+drone_distances[i,n-1]) for i in m.nodes)
+                    <= drone_range)
 
-# # Makespan workers
-# m.makespan_workers = pyo.ConstraintList()
-# m.makespan_workers.add(sum(m.x_workers[i, j]*worker_distances[i,j] for i in m.nodes for j in m.nodes) <= m.makespan)
-#
-# # makespan drones: have to consider the distances of the routes with v
-# m.makespan_drones = pyo.ConstraintList()
-# m.makespan_workers.add(sum(m.x_drones[i, j,r]*drone_distances[i,j]  for i in m.nodes for j in m.nodes for r in m.trips)
-#                        + sum(m.x_drones[i,j,r]*m.v[i,k,r]*(drone_distances[i,k]+drone_distances[k,j]-drone_distances[i,j])
-#                                                          for i in m.nodes for j in m.nodes for r in m.trips for k in m.nodes)
-#                            <= m.makespan)
+
+
 
 m.makespan_times = pyo.ConstraintList()
 for i in m.nodes:
@@ -301,6 +293,8 @@ print("\n")
 
 print('times: ',list(m.t[:].value))
 print("makespan: ",m.makespan.value)
+
+print('times prime: ',list(m.t_prime[:].value))
 
 # print('DRONEs')
 # print(list(m.x_drones[4, :, 5].value))
