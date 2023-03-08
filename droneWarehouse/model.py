@@ -249,6 +249,17 @@ m.makespan_times = pyo.ConstraintList()
 for i in m.nodes:
     m.makespan_times.add(m.t[i] <= m.makespan)
 
+
+m.drones_cannot_visit_worker_route = pyo.ConstraintList()
+for j in m.orders:
+    for r in m.trips:
+        m.drones_cannot_visit_worker_route.add( sum( m.x_drones[i,j,r] for i in m.nodes) <= (1 - sum(m.x_workers[i,j] for i in m.nodes)))
+
+
+
+m.testing = pyo.ConstraintList()
+# m.testing.add(m.x_drones[0,3,1]==1)
+
 m.OBJ = pyo.Objective(expr=m.makespan, sense=pyo.minimize)
 
 
