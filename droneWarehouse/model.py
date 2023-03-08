@@ -5,11 +5,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 from instances import *
+from pyomo.util.infeasible import log_infeasible_constraints, log_close_to_bounds
 
 
 # GENERATE NODES AND DISTANCES
 
-n = 7 # with 6 is good instance, 8 is the one that i want to show
+n = 6 # with 6 is good instance, 8 is the one that i want to show
 
 
 coord_x, coord_y, drone_distances,worker_distances, nodes = create_instance1(n,seed= 1049586)
@@ -23,7 +24,7 @@ worker_capacity = 10000
 
 drone_capacity = 1
 #DRONE CAPACITY
-drone_range = 1200                                 #DRONE RANGE
+drone_range = 1500                       #DRONE RANGE
 big_M = 100000000
 max_time = big_M
 
@@ -67,8 +68,6 @@ m.z = pyo.Var(m.nodes, m.nodes, m.trips, domain=pyo.Binary) # aux variable of th
 m.z_prime = pyo.Var(m.nodes, m.nodes, m.trips, domain=pyo.Binary) # aux variable of the multiplication of v and (1-w)
 
 m.t = pyo.Var(m.nodes, domain=pyo.NonNegativeReals)
-m.t_prime =pyo.Var(m.trips, domain=pyo.NonNegativeReals) #ending time of each trip #not used
-
 
 m.makespan = pyo.Var(domain=pyo.NonNegativeReals)
 
@@ -151,12 +150,7 @@ for r in m.trips:
         if (e < r):
             m.trips_order.add(sum(m.x_drones[0,j,r] for j in m.orders) <= sum(m.x_drones[0,j,e] for j in m.orders))
 
-#get the ending time of each trip on the routes of the drone
-# m.max_time_trips = pyo.ConstraintList()
-# for r in m.trips:
-#     for i in m.nodes:
-#         for j in m.nodes1:
-#             m.max_time_trips.add(m.t[j]*m.x_drones[i,j,r] + drone_distances[j,0]*m.x_drones[j,0,r] <= m.t_prime[r])
+
 
 
 
@@ -189,7 +183,6 @@ for i in m.nodes:
             # m.drop_time_coordination.add( (m.t[j] - m.t[i] - drone_distances[i, j]) <= big_M * (1 - m.v[i, j, r])) #worker waits
             # m.drop_time_coordination.add( (m.t[i] + drone_distances[i, j] - m.t[j]) <= big_M * (1 - m.v[i, j, r])) #drone waits
 
-            # m.drop_time_coordination.add(m.w[i,j,r]<= m.v[i,j,r])
 
 
 
@@ -197,7 +190,7 @@ for i in m.nodes:
 m.capacity = pyo.ConstraintList()
 for i in m.nodes2:
     m.capacity.add(m.y_workers[i] <= worker_capacity)
-    m.capacity.add(1 <= m.y_workers[i]) #todo one should be demand
+    m.capacity.add(1 <= m.y_workers[i]) #todo the one should be demand
 
 for i in m.nodes2:
     for r in m.trips:
@@ -221,12 +214,9 @@ for j in m.orders:
     for r in m.trips:
         m.drone_drops.add(sum(m.x_workers[h,j] for h in m.orders) >= sum(m.v[i,j,r] for i in m.orders))
 
-# the varibale v cannot be 1 when starting or ending at depot:
+# the variabale v cannot be 1 when starting or ending at depot:
 m.drone_drops.add(sum(m.v[0,j,r] for j in m.nodes for r in m.trips )==0)
 m.drone_drops.add(sum(m.v[i,0,r] for i in m.nodes for r in m.trips )==0)
-
-# m.drone_drops.add(m.v[2,3,0] == 1)                                                          #TEST
-
 
 
 #drone cannot drop load from node j if the drone doesnt travel to it in the same trip
@@ -234,10 +224,7 @@ for r in m.trips:
     for j in m.nodes:
         m.drone_drops.add(sum(m.x_drones[i,j,r] for i in m.nodes) >= sum(m.v[j,k,r] for k in m.nodes))
 
-# drone can drop from one node at most once
-# for i in m.nodes:
-#     for r in m.trips:
-#         m.drone_drops.add(sum(m.v[i, j, r] for j in m.nodes) <= 1)
+# y cant be 1 if there's no
 for r in m.trips:
     for i in m.nodes:
         m.drone_drops.add(m.y_drones[i,r] <= sum(m.x_drones[j,i,r] for j in m.nodes))
@@ -252,7 +239,7 @@ for r in m.trips:
 # range constraint
 m.range = pyo.ConstraintList()
 for r in m.trips:
-        m.range.add(sum(m.x_drones[i,n-1,r] * (m.t[i]+drone_distances[i,n-1]) for i in m.nodes)
+        m.range.add(sum(m.x_drones[i,n-1,r] * (m.t[i]+drone_distances[i,n-1]) for i in m.orders)
                     <= drone_range)
 
 
@@ -294,7 +281,6 @@ print("\n")
 print('times: ',list(m.t[:].value))
 print("makespan: ",m.makespan.value)
 
-print('times prime: ',list(m.t_prime[:].value))
 
 # print('DRONEs')
 # print(list(m.x_drones[4, :, 5].value))
@@ -376,12 +362,11 @@ print(worker_distances[0,2])
 
 
 
+m.range.pprint()
+m.range.display()
 
 
+print(log_infeasible_constraints(m, log_expression=True, log_variables=True))
 
-
-
-
-
-
+print(log_close_to_bounds(m))
 
