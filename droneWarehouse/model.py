@@ -24,7 +24,7 @@ worker_capacity = 10000
 
 drone_capacity = 1
 #DRONE CAPACITY
-drone_range = 1500                       #DRONE RANGE
+drone_range = 1000                  #DRONE RANGE
 big_M = 100000000
 max_time = big_M
 
@@ -77,7 +77,7 @@ m.makespan = pyo.Var(domain=pyo.NonNegativeReals)
 # Constraint 1: NODES MUST BE VISITED
 m.orders_fulfillment = pyo.ConstraintList()
 for i in m.orders:
-    m.orders_fulfillment.add(sum(m.x_workers[i, j] for j in m.nodes2) + sum(m.x_drones[i, j, r] for j in m.nodes2 for r in m.trips) >= 1)
+    m.orders_fulfillment.add(sum(m.x_workers[i, j] for j in m.nodes2) + sum(m.x_drones[i, j, r] for j in m.nodes2 for r in m.trips) == 1)
 
 #constraint 2: FLOWS
 m.flows = pyo.ConstraintList()
@@ -240,7 +240,8 @@ for r in m.trips:
 m.range = pyo.ConstraintList()
 for r in m.trips:
         m.range.add(sum(m.x_drones[i,n-1,r] * (m.t[i]+drone_distances[i,n-1]) for i in m.orders)
-                    <= drone_range)
+                  - sum(m.x_drones[i,n-1,e] * (m.t[i]+drone_distances[i,n-1]) for i in m.orders for e in range(r))
+                  <= drone_range)
 
 
 
@@ -367,14 +368,11 @@ plt.show()
 
 
 
+# m.t.pprint()
+# m.x_drones.pprint()
 
-print(worker_distances[0,2])
-
-
-
-
-m.range.pprint()
-m.range.display()
+# m.time_accumulation.pprint()
+# m.time_accumulation.display()
 
 
 print(log_infeasible_constraints(m, log_expression=True, log_variables=True))
