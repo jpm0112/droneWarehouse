@@ -22,9 +22,15 @@ number_drones = 1
 number_nodes = len(drone_distances)-1
 worker_capacity = 10000
 
-drone_capacity = 1
+
 #DRONE CAPACITY
-drone_range = 1000                  #DRONE RANGE
+drone_capacity = 1
+# DRONE RANGE
+drone_range = 1300
+#drop time
+pickup_time_drones = np.ones(number_nodes+1)*10
+pickup_time_worker = np.ones(number_nodes+1)*50
+
 big_M = 100000000
 max_time = big_M
 
@@ -37,8 +43,6 @@ demand = np.ones(number_nodes+1)
 demand[0] = 0
 demand[-1] = 0
 demand = demand.astype("int")
-
-drone_distances[4,0]+920
 
 m = pyo.ConcreteModel()
 
@@ -125,7 +129,8 @@ for i in m.nodes:
             for r in m.trips:
                 m.time_accumulation.add(m.t[i]
                                         + worker_distances[i, j] * m.x_workers[i, j]
-                                        + m.z_prime[k,i,r] * (m.t[k]+drone_distances[k,i] - m.t[i])
+                                        + m.z_prime[k,i,r] * (m.t[k]+drone_distances[k,i] - m.t[i]) #if the worker waits for the drone
+                                        + pickup_time_worker[j] * m.v[k,i,r] #todo is faster with a sum rather than a constraint for each k? #todo should I ssum i or j?
                                         - max_time * (1 - m.x_workers[i, j]) <= m.t[j])
 
 
@@ -138,7 +143,7 @@ for i in m.nodes:
                     + sum( m.x_drones[q,w,e]*drone_distances[q,w] for q in m.nodes for w in m.nodes for e in range(r)) # todo this sum needs to address the Vs
                     + drone_distances[i, j] * m.x_drones[i, j, r]
                     - m.v[i, k, r] * (drone_distances[i, j] * m.x_drones[i, j, r])
-                    + m.v[i, k, r] * (drone_distances[i, k] + drone_distances[k, j])
+                    + m.v[i, k, r] * (drone_distances[i, k] + drone_distances[k, j]+pickup_time_drones[j]) #todo should I ssum i or j?
                     + m.z[i, k, r]  * (m.t[k]-m.t[i]-drone_distances[i,k])
                     - max_time * (1 - m.x_drones[i, j, r]) <= m.t[j])
 
@@ -237,7 +242,7 @@ for r in m.trips:
 
 
 # range constraint
-m.range = pyo.ConstraintList()
+m.range = pyo.ConstraintList() #todo consider when drone leaves depot at time 20 in the first route for example (substract this time)
 for r in m.trips:
         m.range.add(sum(m.x_drones[i,n-1,r] * (m.t[i]+drone_distances[i,n-1]) for i in m.orders)
                   - sum(m.x_drones[i,n-1,e] * (m.t[i]+drone_distances[i,n-1]) for i in m.orders for e in range(r))
