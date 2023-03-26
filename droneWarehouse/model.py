@@ -31,7 +31,7 @@ drone_range = 1300
 pickup_time_drones = np.ones(number_nodes+1)*10
 pickup_time_worker = np.ones(number_nodes+1)*50
 
-big_M = 100000000
+big_M = np.sum(worker_distances/2)
 max_time = big_M
 
 nodes_list = list(range(0, number_nodes))
