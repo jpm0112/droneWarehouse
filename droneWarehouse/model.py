@@ -10,10 +10,10 @@ from pyomo.util.infeasible import log_infeasible_constraints, log_close_to_bound
 
 # GENERATE NODES AND DISTANCES
 
-n = 6 # with 6 is good instance, 8 is the one that i want to show
+n = 8 # with 6 is good instance, 8 is the one that i want to show
+multiplier = 4 # drones_distances * multiplier = worker distance
 
-
-coord_x, coord_y, drone_distances,worker_distances, nodes = create_instance1(n,seed= 1049586)
+coord_x, coord_y, drone_distances,worker_distances, nodes = create_instance_2(n,multiplier,seed= 1049586)
 
 
 # DEFINE PARAMETERS
