@@ -10,7 +10,7 @@ from pyomo.util.infeasible import log_infeasible_constraints, log_close_to_bound
 
 # GENERATE NODES AND DISTANCES
 
-n = 8 # with 6 is good instance, 8 is the one that i want to show
+n = 9 # with 6 is good instance, 8 is the one that i want to show #number of orders will be n-2
 multiplier = 4 # drones_distances * multiplier = worker distance
 
 coord_x, coord_y, drone_distances,worker_distances, nodes = create_instance_2(n,multiplier,seed= 1049586)
@@ -20,7 +20,7 @@ coord_x, coord_y, drone_distances,worker_distances, nodes = create_instance_2(n,
 number_workers = 1
 number_drones = 1
 number_nodes = len(drone_distances)-1
-worker_capacity = 10000
+worker_capacity = 100
 
 
 #DRONE CAPACITY
@@ -31,7 +31,9 @@ drone_range = 1300
 pickup_time_drones = np.ones(number_nodes+1)*10
 pickup_time_worker = np.ones(number_nodes+1)*50
 
-big_M = np.sum(worker_distances/2)
+charging_time = 50
+
+big_M = np.sum(worker_distances/4)
 max_time = big_M
 
 nodes_list = list(range(0, number_nodes))
@@ -64,6 +66,7 @@ m.y_workers = pyo.Var(m.nodes, domain=pyo.NonNegativeReals)
 #dorne variable
 m.x_drones = pyo.Var(m.nodes, m.nodes,m.trips, domain=pyo.Binary)
 m.y_drones = pyo.Var(m.nodes,m.trips, domain=pyo.NonNegativeReals) #acumulated capacity of the drone at node i in trip r
+m.trip_starting_time = pyo.Var(m.trips, domain=pyo.NonNegativeReals) #start time for each trip, just after charging the drone
 
 # drop off variables
 m.v = pyo.Var(m.nodes, m.nodes,m.trips, domain=pyo.Binary) #if drone drops from node i to drone j in trip r
@@ -103,7 +106,7 @@ for r in m.trips:
 m.subroutes = pyo.ConstraintList()
 for i in m.nodes:
     for j in m.nodes:
-        m.subroutes.add(m.y_workers[i] + m.x_workers[i,j] - worker_capacity * (1 - m.x_workers[i,j]) <= m.y_workers[j]) #todo ADD drone load if drone drops
+        m.subroutes.add(m.y_workers[i] + m.x_workers[i,j] - worker_capacity * (1 - m.x_workers[i,j]) <= m.y_workers[j]) #todo ADD drone load if drone drops, not importatn if worker capcity is infinite
 
 #delete routes thast goes from depot to depot
 for r in m.trips:
@@ -123,6 +126,8 @@ for i in m.nodes:
 # constraint 5: TIME UPDATE AND COORDINATION
 # same as the capacity update but saving the time
 m.time_accumulation = pyo.ConstraintList()
+
+# for the worker
 for i in m.nodes:
     for j in m.nodes:
         for k in m.nodes:
@@ -134,18 +139,33 @@ for i in m.nodes:
                                         - max_time * (1 - m.x_workers[i, j]) <= m.t[j])
 
 
+
+
+#for the drone
 for i in m.nodes:
     for j in m.nodes:
         for k in m.nodes:
             for r in m.trips:
                 m.time_accumulation.add(
                     m.t[i]
-                    + sum( m.x_drones[q,w,e]*drone_distances[q,w] for q in m.nodes for w in m.nodes for e in range(r)) # todo this sum needs to address the Vs
-                    + drone_distances[i, j] * m.x_drones[i, j, r]
-                    - m.v[i, k, r] * (drone_distances[i, j] * m.x_drones[i, j, r])
+                    #+ sum( m.x_drones[q,w,e]*drone_distances[q,w] for q in m.nodes for w in m.nodes for e in range(r)) # sum of the time of the previous trips #todo this sum needs to address the Vs
+                    + m.trip_starting_time[r]
+                    + drone_distances[i, j] * m.x_drones[i, j, r] # the time required for the to travel to the current node
+                    - m.v[i, k, r] * (drone_distances[i, j] * m.x_drones[i, j, r]) # if there is a drop off, the the previous term is omited and the distance is calculated with the following term
                     + m.v[i, k, r] * (drone_distances[i, k] + drone_distances[k, j]+pickup_time_drones[j]) #todo should I ssum i or j?
                     + m.z[i, k, r]  * (m.t[k]-m.t[i]-drone_distances[i,k])
                     - max_time * (1 - m.x_drones[i, j, r]) <= m.t[j])
+
+
+
+# trips finishing times:
+m.trips_starting_calc = pyo.ConstraintList()
+for i in m.nodes:
+        for r in m.trips:
+            if r >0:
+                m.trips_starting_calc.add(
+                    m.trip_starting_time[r] >= (m.t[i] + drone_distances[i, 0] + charging_time) * m.x_drones[i, n-1, r-1])
+
 
 #constraint to use the first indexes of the trips
 # if the index e is lower than r, if trip do not have a route r cant have a route either
@@ -219,7 +239,7 @@ for j in m.orders:
     for r in m.trips:
         m.drone_drops.add(sum(m.x_workers[h,j] for h in m.orders) >= sum(m.v[i,j,r] for i in m.orders))
 
-# the variabale v cannot be 1 when starting or ending at depot:
+# the variable v cannot be 1 when starting or ending at depot:
 m.drone_drops.add(sum(m.v[0,j,r] for j in m.nodes for r in m.trips )==0)
 m.drone_drops.add(sum(m.v[i,0,r] for i in m.nodes for r in m.trips )==0)
 
@@ -335,6 +355,10 @@ for r in range(number_nodes+1):
 print("\n")
 print("routes workers: ",routes_worker)
 print("routes drones: ",routes_drone)
+
+for i in range(5):
+    print("trip: ", i)
+    print("routes drones: ",routes_drone[i])
 
 
 # PLOT STUFF
